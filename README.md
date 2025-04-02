@@ -1,0 +1,161 @@
+import { useState, useEffect, useReducer, useMemo, useCallback } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+
+const exchangeRate = 0.71; // 1 دولار = 0.71 دينار أردني
+const deliveryFee = 3; // رسوم التوصيل داخل الأردن بالدينار الأردني
+const allowedCities = ["عمان", "إربد", "جرش", "عجلون", "المفرق"];
+
+const cartReducer = (state, action) => {
+  switch (action.type) {
+    case "ADD_ITEM":
+      const existingProduct = state.find((item) => item.id === action.payload.id);
+      if (existingProduct) {
+        return state.map((item) =>
+          item.id === action.payload.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      } else {
+        return [...state, { ...action.payload, quantity: 1 }];
+      }
+    case "UPDATE_QUANTITY":
+      if (action.payload.quantity < 1) {
+        return state.filter((item) => item.id !== action.payload.id);
+      } else {
+        return state.map((item) =>
+          item.id === action.payload.id ? { ...item, quantity: action.payload.quantity } : item
+        );
+      }
+    default:
+      return state;
+  }
+};
+
+export default function Store() {
+  const [products, setProducts] = useState([]);
+  const [cart, dispatchCart] = useReducer(cartReducer, []);
+  const [user, setUser] = useState("");
+  const [email, setEmail] = useState("");
+  const [city, setCity] = useState("");
+  const [tracking, setTracking] = useState(null);
+  const [adminMode, setAdminMode] = useState(false);
+  const [newProduct, setNewProduct] = useState({ name: "", price: "", image: "", quantity: "" });
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const storedProducts = JSON.parse(localStorage.getItem("products")) || [];
+    setProducts(storedProducts);
+  }, []);
+
+  const saveProducts = useCallback((updatedProducts) => {
+    setProducts(updatedProducts);
+    localStorage.setItem("products", JSON.stringify(updatedProducts));
+  }, []);
+
+  const addToCart = useCallback((product) => {
+    dispatchCart({ type: "ADD_ITEM", payload: product });
+  }, []);
+
+  const updateQuantity = useCallback((id, quantity) => {
+    dispatchCart({ type: "UPDATE_QUANTITY", payload: { id, quantity } });
+  }, []);
+
+  const handleCheckout = useCallback(() => {
+    if (!city) {
+      setError("يرجى اختيار المدينة للتوصيل داخل عمان أو محافظات الشمال.");
+      return;
+    }
+    const trackingNumber = Math.floor(100000 + Math.random() * 900000);
+    setTracking(trackingNumber);
+    alert(`تم تأكيد طلبك! رقم تتبع الطلب: ${trackingNumber}`);
+  }, [city]);
+
+  const addProduct = useCallback(() => {
+    if (!newProduct.name || !newProduct.price || !newProduct.image || !newProduct.quantity) {
+      setError("يرجى ملء جميع الحقول");
+      return;
+    }
+    const newItem = { ...newProduct, id: Date.now(), price: parseFloat(newProduct.price), quantity: parseInt(newProduct.quantity) };
+    saveProducts([...products, newItem]);
+    setNewProduct({ name: "", price: "", image: "", quantity: "" });
+  }, [newProduct, products, saveProducts]);
+
+  const totalCartPrice = useMemo(() => {
+    return cart.reduce((total, item) => total + item.price * item.quantity * exchangeRate, 0) + deliveryFee;
+  }, [cart, deliveryFee]);
+
+  return (
+    <div className="p-4 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">️ متجر إلكتروني</h1>
+      <Button className="mb-4" onClick={() => setAdminMode(!adminMode)}>
+        {adminMode ? " وضع المستخدم" : "⚙️ وضع المسؤول"}
+      </Button>
+
+      {error && <p className="text-red-500">{error}</p>}
+
+      {adminMode ? (
+        <div className="mb-6 p-4 bg-gray-100 rounded">
+          <h2 className="text-lg font-semibold">️ إدارة المنتجات</h2>
+          <Input className="mt-2" placeholder="اسم المنتج" value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} />
+          <Input className="mt-2" type="number" placeholder="السعر" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })} />
+          <Input className="mt-2" placeholder="رابط الصورة" value={newProduct.image} onChange={(e) => setNewProduct({ ...newProduct, image: e.target.value })} />
+          <Input className="mt-2" type="number" placeholder="الكمية" value={newProduct.quantity} onChange={(e) => setNewProduct({ ...newProduct, quantity: e.target.value })} />
+          <Button className="mt-2 w-full bg-blue-500" onClick={addProduct}>إضافة المنتج</Button>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {products.map((product) => (
+              <Card key={product.id} className="p-4">
+                <img src={product.image} alt={product.name} className="w-full h-32 object-cover rounded" />
+                <CardContent>
+                  <h2 className="text-lg font-semibold">{product.name}</h2>
+                  <p className="text-gray-600">{(product.price * exchangeRate).toFixed(2)} دينار أردني</p>
+                  <Button className="mt-2 w-full" onClick={() => addToCart(product)}>
+                    إضافة للسلة
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <h2 className="text-lg font-semibold"> السلة</h2>
+            {cart.length === 0 ? (
+              <p>السلة فارغة</p>
+            ) : (
+              <div>
+                {cart.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between border-b py-2">
+                    <span>{item.name}</span>
+                    <div className="flex items-center">
+                      <Button onClick={() => updateQuantity(item.id, item.quantity - 1)}>-</Button>
+                      <span className="mx-2">{item.quantity}</span>
+                      <Button onClick={() => updateQuantity(item.id, item.quantity + 1)}>+</Button>
+                    </div>
+                    <span>{(item.price * item.quantity * exchangeRate).toFixed(2)} دينار أردني</span>
+                  </div>
+                ))}
+                <p className="mt-2 font-semibold">الإجمالي: {totalCartPrice.toFixed(2)} دينار أردني</p>
+                <Select value={city} onValueChange={setCity}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="اختر المدينة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allowedCities.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button className="mt-2 w-full bg-green-500" onClick={handleCheckout}>إتمام الدفع</Button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
